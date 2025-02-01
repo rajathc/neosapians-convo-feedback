@@ -15,6 +15,16 @@ let startTime = null;
 
 const API_KEY = '2785097c3f2e45c5b2f68afd73b045a5'; // Replace with your API key if needed
 
+// Check and return a supported MIME type, or return empty string if none are supported
+const getSupportedMimeType = () => {
+  if (MediaRecorder.isTypeSupported('audio/webm')) {
+    return 'audio/webm';
+  } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+    return 'audio/mp4';
+  }
+  return '';
+};
+
 // Timer functions
 function startTimer() {
   startTime = Date.now();
@@ -55,7 +65,9 @@ toggleRecord.addEventListener('click', async () => {
   if (!isRecording) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = getSupportedMimeType();
+      const options = mimeType ? { mimeType } : undefined;
+      mediaRecorder = new MediaRecorder(stream, options);
       
       mediaRecorder.onstart = () => {
         recordingIndicator.classList.remove('hidden');
@@ -73,7 +85,7 @@ toggleRecord.addEventListener('click', async () => {
         timerDisplay.textContent = '03:00';
         progressLine.style.width = '100%';
         
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
         // Reset audio chunks for the next recording
         audioChunks = [];
         await processAudio(audioBlob);
@@ -87,9 +99,6 @@ toggleRecord.addEventListener('click', async () => {
       toggleRecord.textContent = 'Stop Recording';
     } catch (error) {
       displayError(`Unable to start recording: ${error.message}. Please ensure your microphone is enabled and accessible.`);
-      isRecording = false;
-      toggleRecord.textContent = 'Start Recording';
-      recordingIndicator.classList.add('hidden');
     }
   } else {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -111,7 +120,6 @@ audioUpload.addEventListener('change', async (event) => {
 // Process audio using AssemblyAI API
 async function processAudio(audioBlob) {
   resultsDiv.innerHTML = '';
-  // Removed "Processing audio..." text; only showing the spinner now.
   showProcessingSpinner();
   
   try {
