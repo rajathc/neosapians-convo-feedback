@@ -1,46 +1,91 @@
-const recordButton = document.getElementById('recordButton');
-const stopButton = document.getElementById('stopButton');
+const toggleRecord = document.getElementById('toggleRecord');
+const recordingIndicator = document.getElementById('recordingIndicator');
 const audioUpload = document.getElementById('audioUpload');
 const resultsDiv = document.getElementById('results');
+const timerDisplay = document.getElementById('timer');
+const progressLine = document.getElementById('progress-line');
 
 let mediaRecorder;
 let audioChunks = [];
+let isRecording = false;
+let timeLeft = 180; // 3 minutes in seconds
+let timerInterval = null;
+let startTime = null;
 
-// 1. Start Recording
-recordButton.addEventListener('click', async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+// Timer functions
+function startTimer() {
+  startTime = Date.now();
+  timerDisplay.textContent = formatTime(timeLeft);
+  progressLine.style.width = '100%';
+  
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    timeLeft = 180 - Math.floor(elapsed / 1000);
+    
+    timerDisplay.textContent = formatTime(timeLeft);
+    const progressPercent = (elapsed / (180 * 1000)) * 100;
+    progressLine.style.width = `${100 - progressPercent}%`;
+    
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      if (isRecording) toggleRecord.click();
+    }
+  }, 50);
+}
 
-    mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
-    };
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const secs = (seconds % 60).toString().padStart(2, '0');
+  return `${mins}:${secs}`;
+}
 
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      await processAudio(audioBlob);
-      stream.getTracks().forEach(track => track.stop()); // Release microphone
-    };
+// Toggle recording
+toggleRecord.addEventListener('click', async () => {
+  if (!isRecording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
 
-    mediaRecorder.start();
-    recordButton.disabled = true;
-    stopButton.disabled = false;
-    audioChunks = [];
-  } catch (error) {
-    alert(`Error: ${error.message}. Allow microphone access!`);
+      mediaRecorder.onstart = () => {
+        recordingIndicator.classList.remove('hidden');
+        timeLeft = 180;
+        startTimer();
+      };
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        clearInterval(timerInterval);
+        recordingIndicator.classList.add('hidden');
+        timerDisplay.textContent = '03:00';
+        progressLine.style.width = '100%';
+        
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        await processAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      toggleRecord.textContent = 'Stop Recording';
+    } catch (error) {
+      alert(`Error: ${error.message}. Allow microphone access!`);
+      isRecording = false;
+      toggleRecord.textContent = 'Start Recording';
+      recordingIndicator.classList.add('hidden');
+    }
+  } else {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+      isRecording = false;
+      toggleRecord.textContent = 'Start Recording';
+    }
   }
 });
 
-// 2. Stop Recording
-stopButton.addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-    recordButton.disabled = false;
-    stopButton.disabled = true;
-  }
-});
-
-// 3. Handle File Upload
+// File upload handler
 audioUpload.addEventListener('change', async (event) => {
   const file = event.target.files[0];
   if (file) {
@@ -48,12 +93,11 @@ audioUpload.addEventListener('change', async (event) => {
   }
 });
 
-// 4. Transcribe Audio & Generate Feedback
+// Audio processing
 async function processAudio(audioBlob) {
   resultsDiv.textContent = 'Processing...';
 
   try {
-    // Upload audio to AssemblyAI
     const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
       method: 'POST',
       headers: { 'authorization': '2785097c3f2e45c5b2f68afd73b045a5' },
@@ -62,7 +106,6 @@ async function processAudio(audioBlob) {
     const uploadData = await uploadResponse.json();
     const audioUrl = uploadData.upload_url;
 
-    // Request transcription
     const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
       method: 'POST',
       headers: { 
@@ -80,7 +123,6 @@ async function processAudio(audioBlob) {
     const transcriptData = await transcriptResponse.json();
     const transcriptId = transcriptData.id;
 
-    // Poll for results
     let transcriptResult;
     while (true) {
       const pollingResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
@@ -92,46 +134,29 @@ async function processAudio(audioBlob) {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Show feedback
     generateFeedback(transcriptResult);
   } catch (error) {
     resultsDiv.textContent = `Error: ${error.message}`;
   }
 }
 
-// 5. Generate Feedback
+// Generate feedback
 function generateFeedback(transcript) {
   const speakers = {};
-  const totalDuration = transcript.audio_duration;
 
-  // Calculate speaking time and filler words
   transcript.utterances.forEach(utterance => {
     const speaker = utterance.speaker;
-    const duration = utterance.end - utterance.start;
-
-    if (!speakers[speaker]) {
-      speakers[speaker] = {
-        text: [],
-        totalDuration: 0,
-        fillerWords: 0
-      };
-    }
-
-    speakers[speaker].text.push(utterance.text);
-    speakers[speaker].totalDuration += duration;
-    speakers[speaker].fillerWords += (utterance.text.match(/ um | uh | like /gi) || []).length;
+    if (!speakers[speaker]) speakers[speaker] = 0;
+    speakers[speaker] += (utterance.text.match(/ um | uh | like /gi) || []).length;
   });
 
-  // Build feedback string
   let feedback = '';
   for (const speaker in speakers) {
-    const percentage = ((speakers[speaker].totalDuration / totalDuration) * 100).toFixed(1);
-    feedback += `Speaker ${speaker}:\n- Used ${speakers[speaker].fillerWords} filler words\n- Spoke ${percentage}% of the time\n\n`;
+    feedback += `Speaker ${speaker} used ${speakers[speaker]} filler words.\n`;
   }
 
-  // Add summary
   if (transcript.summary) {
-    feedback += `Conversation Summary:\n${transcript.summary}`;
+    feedback += `\nConversation Summary:\n${transcript.summary}`;
   }
 
   resultsDiv.textContent = feedback;

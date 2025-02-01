@@ -5,17 +5,22 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <h1>Conversation Feedback Tool</h1>
   
-    <h1>Record or Upload a Conversation</h1>
-  
-  <!-- Recording Section -->
-  <button id="recordButton">Start Recording</button>
-  <button id="stopButton" disabled>Stop</button>
-  
-  <!-- File Upload -->
+  <button id="toggleRecord">Start Recording</button>
   <input type="file" id="audioUpload" accept="audio/*">
   
-  <!-- Results Display -->
+  <div id="recordingIndicator" class="hidden">
+    <div class="recording-status">
+      <div class="red-dot"></div>
+      <span>Recording...</span>
+    </div>
+    <div id="progress-container">
+      <div id="progress-line"></div>
+    </div>
+    <div id="timer">03:00</div>
+  </div>
+
   <div id="results"></div>
 
   <script src="app.js"></script>
