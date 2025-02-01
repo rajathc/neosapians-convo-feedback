@@ -92,11 +92,15 @@ toggleRecord.addEventListener('click', async () => {
         
         // Stop all tracks to release the microphone
         stream.getTracks().forEach(track => track.stop());
+        // Remove the red stop recording class
+        toggleRecord.classList.remove('stop-recording');
       };
 
       mediaRecorder.start();
       isRecording = true;
       toggleRecord.textContent = 'Stop Recording';
+      // Add the red color style for stop recording
+      toggleRecord.classList.add('stop-recording');
     } catch (error) {
       displayError(`Unable to start recording: ${error.message}. Please ensure your microphone is enabled and accessible.`);
     }
@@ -105,6 +109,8 @@ toggleRecord.addEventListener('click', async () => {
       mediaRecorder.stop();
       isRecording = false;
       toggleRecord.textContent = 'Start Recording';
+      // Remove the stop recording styling when not recording
+      toggleRecord.classList.remove('stop-recording');
     }
   }
 });
